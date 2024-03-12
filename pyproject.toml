@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "json2dag"
+version = "0.1.0"
+description = ""
+authors = ["Matthew Reda <m.reda94@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
+numpy = "^1.26.4"
+fastapi = "^0.110.0"
+arviz = "^0.17.0"
+pymc = "^5.10.4"
+pymc-experimental = "^0.0.17"
+numba = "^0.59.0"
+numpyro = "^0.14.0"
+uvicorn = "^0.28.0"
+pydantic = "^2.6.3"
+ipykernel = "^6.29.3"
+graphviz = "^0.20.1"
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+ipykernel = "^6.29.3"
+matplotlib = "^3.8.3"
+dowhy = "^0.11.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
