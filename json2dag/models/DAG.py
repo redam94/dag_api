@@ -4,7 +4,7 @@ from typing import Callable, Optional
 import graphviz as gv
 import pymc as pm
 
-from .relations import linear
+from json2dag.models.relations import linear
 
 
 class AbstractNode(pyd.BaseModel):
@@ -15,6 +15,7 @@ class Node(AbstractNode):
     value: float|list
     parents: set[AbstractNode] = []
     children: set[AbstractNode] = []
+    messurement_error: bool = False
     
     def __init__(self, **data):
         super().__init__(**data)
@@ -104,6 +105,7 @@ class Edge(pyd.BaseModel):
     parent: Node
     child: Node
     op: Callable = linear
+    prior_constraint: Optional[str] = None
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -116,8 +118,8 @@ class Edge(pyd.BaseModel):
       
     def _process_docs(self):
       docs = self.op.__doc__.split("\n")
-      docs = [doc.strip() for doc in docs if doc.strip() != "" and doc.strip() != "----------------"]
-      name = docs[0].replace(":", "").strip()
+      docs = [doc.strip() for doc in docs if doc.strip().replace("-", "") != ""]
+      name = self.op.__name__
       n_args = int(docs[1].split("=")[1].strip())
       return {'op_name': name, 'op_n_args': n_args}
     
@@ -209,7 +211,12 @@ def model_from_dag(dag, observations=None):
     
     node_model = {}
     for edge in dag.edges:
-      beta = [pm.Normal(f'{edge}_arg_{i}', mu=0, sigma=1) for i in range(edge.op_n_args)]
+      if edge.prior_constraint is None:
+        beta = [pm.Normal(f'{edge}_arg_{i}', mu=0, sigma=1) for i in range(edge.op_n_args)]
+    
+      if edge.prior_constraint == 'positive':
+        beta = [pm.Beta(f'{edge}_arg_{i}', .5, .5) for i in range(edge.op_n_args)]
+        
       
       node_model[edge.child.name] = node_model.get(edge.child.name, 0) + edge.apply(*beta)
     
