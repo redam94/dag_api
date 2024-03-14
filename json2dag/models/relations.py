@@ -4,6 +4,7 @@ import numpy as np
 import numpy.typing as npt
 
 from typing import Union
+from json2dag.models.utils import process_docs
 
 def linear(x, b):
   """
@@ -89,9 +90,7 @@ def geometric_adstock(
     Geometric adstock transformation
     n_args = 1
     ----------------
-    x: number
-    b: number
-    lag: number
+    
 
     Adstock with geometric decay assumes advertising effect peaks at the same
     time period as ad exposure. The cumulative media effect is a weighted average
@@ -129,9 +128,11 @@ def geometric_adstock(
     w = w / pt.sum(w, axis=-1, keepdims=True) if normalize else w
     return batched_convolution(x, w, axis=axis)
   
-def partial_with_docs(func, **kwargs):
-  def partial_func(*args, **kwargs):
-    return func(*args, **kwargs)
-  partial_func.__doc__ = func.__doc__
-  partial_func.__name__ = f"{func.__name__} {';'.join([f'{k}={v}' for k, v in kwargs.items()])}"
-  return partial_func
+
+def hill(x, K, S):
+    """
+    Hill transformation
+    n_args = 2
+    """
+    
+    return x**S / (K**S + x**S)
