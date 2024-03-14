@@ -3,9 +3,11 @@ import pydantic as pyd
 from typing import Callable, Optional
 import graphviz as gv
 import pymc as pm
+import pytensor.tensor as pt
+
 
 from json2dag.models.relations import linear
-
+from json2dag.models.utils import process_docs, make_appropriate_prior
 
 class AbstractNode(pyd.BaseModel):
     pass
@@ -105,7 +107,7 @@ class Edge(pyd.BaseModel):
     parent: Node
     child: Node
     op: Callable = linear
-    prior_constraint: Optional[str] = None
+    prior_constraint: Optional[str|list[str|None]] = None
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -116,22 +118,15 @@ class Edge(pyd.BaseModel):
     def __repr__(self):
         return str(self)
       
-    def _process_docs(self):
-      docs = self.op.__doc__.split("\n")
-      docs = [doc.strip() for doc in docs if doc.strip().replace("-", "") != ""]
-      name = self.op.__name__
-      n_args = int(docs[1].split("=")[1].strip())
-      return {'op_name': name, 'op_n_args': n_args}
-    
     @pyd.computed_field
     @property
     def op_n_args(self)->int:
-        return self._process_docs()['op_n_args']
+        return process_docs(self.op)['op_n_args']
 
     @pyd.computed_field
     @property
     def op_name(self)->str:
-        return self._process_docs()['op_name']
+        return process_docs(self.op)['op_name']
     
     def apply(self, *args):
         try:
@@ -194,7 +189,7 @@ def dag_from_causes_dict(causes):
 def model_from_dag(dag, observations=None):
   
   n_obs = len(observations[list(observations.keys())[0]]) if observations is not None else 0
-  with pm.Model(coords = {'nodes': [node.name for node in dag.nodes]}, 
+  with pm.Model(coords = {'nodes': [node.name for node in dag.nodes]}|{f"{edge}_dims": range(edge.op_n_args) for edge in dag.edges}, 
                 coords_mutable=None if observations is None else {'obs': range(n_obs)}) as model:
     
     if observations is None:
@@ -211,13 +206,9 @@ def model_from_dag(dag, observations=None):
     
     node_model = {}
     for edge in dag.edges:
-      if edge.prior_constraint is None:
-        beta = [pm.Normal(f'{edge}_arg_{i}', mu=0, sigma=1) for i in range(edge.op_n_args)]
-    
-      if edge.prior_constraint == 'positive':
-        beta = [pm.Beta(f'{edge}_arg_{i}', .5, .5) for i in range(edge.op_n_args)]
         
-      
+      beta = make_appropriate_prior(f"{edge}", edge.op_n_args, edge.prior_constraint)  
+      pm.Deterministic(f"{edge}", pt.stack(beta), dims=f'{edge}_dims')
       node_model[edge.child.name] = node_model.get(edge.child.name, 0) + edge.apply(*beta)
     
     
