@@ -4,12 +4,11 @@ import numpy as np
 import numpy.typing as npt
 
 from typing import Union, Dict, List, Optional, Callable
-from abc import ABC
 from json2dag.models.utils import process_docs
 
 class EdOp(Callable):
     """
-    Abstract class for edge operations
+    Class for edge operations
     """
     
     def __init__(self, **kwargs):
@@ -36,6 +35,7 @@ class EdOp(Callable):
         return str(self)
     
     def __add__(self: 'EdOp', other: 'EdOp'):
+        """Use addition to create a pipeline of operations"""
    
         def _pipe(data, *args, **kwargs):
             args_left = 0
@@ -49,10 +49,13 @@ class EdOp(Callable):
              op=_pipe, 
              n_args=self.n_args + other.n_args, 
              args=self.args + other.args)
+        
+    def __or__(self: 'EdOp', other: 'EdOp'):
+        """Use pipe to create a pipeline of operations"""
+        return self + other
 
     
 class Linear(EdOp):
-    
     
     def __init__(self):
         super(Linear, self).__init__(n_args=1, op_name="linear", args=["beta"], op=linear)

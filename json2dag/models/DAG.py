@@ -17,7 +17,7 @@ class Node(AbstractNode):
     value: float|list
     parents: set[AbstractNode] = []
     children: set[AbstractNode] = []
-    messurement_error: bool = False
+    observed: bool = False
     
     def __init__(self, **data):
         super().__init__(**data)
@@ -144,76 +144,92 @@ class Edge(pyd.BaseModel):
     def __hash__(self):
         return hash(f"{self.parent} {self.child}")
       
-class DAG(pyd.BaseModel):
-  nodes: Optional[set[Node]] 
-  edges: Optional[set[Edge]]
-  
-  def __init__(self, **data):
-    super().__init__(**data)
-  
-  def display(self):
-    dg = gv.Digraph()
-    for node in self.nodes:
-      dg.node(node.name, f"{node.name}={node.value}")
-    for edge in self.edges:
-      dg.edge(edge.parent.name, edge.child.name, label=edge.op_name)
-    return dg
-  
-  def __repr__(self):
-    return self.display().source
-  
-  @pyd.computed_field
-  @property
-  def graph(self)->bytes:
-    return self.display().pipe("png")
-  
-  
-def dag_from_causes_dict(causes):
-  def _handle_effects(d: str|dict):
-    if isinstance(d, str):
-      return {"name": d}
-    return d
-  causes = {k: list(map(_handle_effects, v)) for k, v in causes.items()}
-  nodes = {name: Node(name=name, value=0) for name in causes.keys()}
+class DAG:
 
-  nodes.update({name["name"]: Node(name=name["name"], value=0) for effects in causes.values() for name in effects})
-  edges = set()
-  for cause, effects in causes.items():
-    for effect in effects:
-      effect_ = effect.copy()
+  
+    def __init__(self, nodes, edges):
+        self.nodes = nodes
+        self.edges = edges
+        self.model = None
+    
+    def display(self):
+        dg = gv.Digraph()
+        for node in self.nodes:
+            dg.node(node.name, f"{node.name}={node.value}")
+        for edge in self.edges:
+            dg.edge(edge.parent.name, edge.child.name, label=edge.op_name)
+        return dg
+  
+    def __repr__(self):
+        return self.display().source
+  
+    @pyd.computed_field
+    @property
+    def graph(self)->bytes:
+        return self.display().pipe("png")
+
+    @staticmethod
+    def dag_from_causes_dict(causes: dict) -> 'DAG':
+
+        def _handle_effects(d: str|dict):
+            if isinstance(d, str):
+                return {"name": d}
+            return d
+        causes = {k: list(map(_handle_effects, v)) for k, v in causes.items()}
+        nodes = {name: Node(name=name, value=0) for name in causes.keys()}
+
+        nodes.update({name["name"]: Node(name=name["name"], value=0) for effects in causes.values() for name in effects})
+        edges = set()
+        for cause, effects in causes.items():
+            for effect in effects:
+                effect_ = effect.copy()
       
-      edges.add(Edge(parent=nodes[cause], child=nodes[effect_.pop("name")], **effect_))
-  #edges = {Edge(parent=nodes[cause], child=nodes[effect.pop("name")], **effect) for cause, effects in causes.items() for effect in effects}
-  return DAG(nodes=nodes.values(), edges=edges)
+                edges.add(Edge(parent=nodes[cause], child=nodes[effect_.pop("name")], **effect_))
+        #edges = {Edge(parent=nodes[cause], child=nodes[effect.pop("name")], **effect) for cause, effects in causes.items() for effect in effects}
+        return DAG(nodes=nodes.values(), edges=edges)
 
-def model_from_dag(dag, observations=None):
-  
-  n_obs = len(observations[list(observations.keys())[0]]) if observations is not None else 0
-  with pm.Model(coords = {'nodes': [node.name for node in dag.nodes]}|{f"{edge}_dims": edge.op.args for edge in dag.edges}, 
+    def model_from_dag(self, observations=None):
+        dag = self
+        n_obs = len(observations[list(observations.keys())[0]]) if observations is not None else 0
+        with pm.Model(coords = {'nodes': [node.name for node in dag.nodes if node.observed]}|{f"{edge}_dims": edge.op.args for edge in dag.edges}, 
                 coords_mutable=None if observations is None else {'obs': range(n_obs)}) as model:
     
-    if observations is None:
-      observations = {node.name: None for node in dag.nodes}
+            if observations is None:
+                observations = {node.name: None for node in dag.nodes}
     
-    else:
-      observations = {node.name: pm.MutableData(f'obs_{node.name}', observations.get(node.name, None), dims='obs') for node in dag.nodes}
-      for node in dag.nodes:
-        node.value = observations[node.name]
-        
-      
+            else:
+                observations = {node.name: pm.MutableData(f'obs_{node.name}', observations.get(node.name, None), dims='obs') for node in dag.nodes}
+            for node in dag.nodes:
+                node.value = observations[node.name]
+
+            observation_noise = pm.HalfNormal('observation_noise', 1, dims='nodes')
     
-    observation_noise = pm.HalfNormal('observation_noise', 1, dims='nodes')
+            node_model = {}
+            for edge in dag.edges:
+                if edge.child.observed:
+                    beta = make_appropriate_prior(f"{edge}", edge.op_n_args, edge.prior_constraint)  
+                    pm.Deterministic(f"{edge}", pt.stack(beta), dims=f'{edge}_dims')
+                    node_model[edge.child.name] = node_model.get(edge.child.name, 0) + edge.apply(*beta)
+            
+            
+            i = 0
+            for node in dag.nodes:
+                if node.observed:
+                    node_mean = pm.Normal(f"mu_{node.name}", mu=0, sigma=1)
+                    pm.Normal(f"{node.name}", mu=node_model.get(node.name, 0)+node_mean, sigma=observation_noise[i], observed=observations[node.name], dims='obs')
+                    i += 1
+            self.model = model
+        return model
     
-    node_model = {}
-    for edge in dag.edges:
-        
-      beta = make_appropriate_prior(f"{edge}", edge.op_n_args, edge.prior_constraint)  
-      pm.Deterministic(f"{edge}", pt.stack(beta), dims=f'{edge}_dims')
-      node_model[edge.child.name] = node_model.get(edge.child.name, 0) + edge.apply(*beta)
+    def sample(self, draws, **kwargs):
+        if self.model is None:
+            self.model_from_dag()
+        with self.model:
+            self.trace = pm.sample(draws, **kwargs)
     
-    
-    for i, node in enumerate(dag.nodes):
-      node_mean = pm.Normal(f"mu_{node.name}", mu=0, sigma=1)
-      pm.Normal(f"{node.name}", mu=node_model.get(node.name, 0)+node_mean, sigma=observation_noise[i], observed=observations[node.name], dims='obs')
-      
-  return model
+    def summary(self, **kwargs):
+        if self.trace is None:
+            raise ValueError('No trace found. Please sample first')
+        if not kwargs:
+            return pm.summary(self.trace, var_names=[f"{edge}" for edge in self.edges if edge.child.observed]+[f'mu_{node.name}' for node in self.nodes if node.observed])
+        return pm.summary(self.model, **kwargs)
