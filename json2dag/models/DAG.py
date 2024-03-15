@@ -6,7 +6,7 @@ import pymc as pm
 import pytensor.tensor as pt
 
 
-from json2dag.models.relations import linear
+from json2dag.models.relations import EdOp, Linear
 from json2dag.models.utils import process_docs, make_appropriate_prior
 
 class AbstractNode(pyd.BaseModel):
@@ -106,7 +106,7 @@ class Node(AbstractNode):
 class Edge(pyd.BaseModel):
     parent: Node
     child: Node
-    op: Callable = linear
+    op: Callable= Linear()
     prior_constraint: Optional[str|list[str|None]] = None
 
     def __init__(self, **data):
@@ -121,12 +121,12 @@ class Edge(pyd.BaseModel):
     @pyd.computed_field
     @property
     def op_n_args(self)->int:
-        return process_docs(self.op)['op_n_args']
+        return self.op.n_args
 
     @pyd.computed_field
     @property
     def op_name(self)->str:
-        return process_docs(self.op)['op_name']
+        return self.op.op_name
     
     def apply(self, *args):
         try:
@@ -189,7 +189,7 @@ def dag_from_causes_dict(causes):
 def model_from_dag(dag, observations=None):
   
   n_obs = len(observations[list(observations.keys())[0]]) if observations is not None else 0
-  with pm.Model(coords = {'nodes': [node.name for node in dag.nodes]}|{f"{edge}_dims": range(edge.op_n_args) for edge in dag.edges}, 
+  with pm.Model(coords = {'nodes': [node.name for node in dag.nodes]}|{f"{edge}_dims": edge.op.args for edge in dag.edges}, 
                 coords_mutable=None if observations is None else {'obs': range(n_obs)}) as model:
     
     if observations is None:

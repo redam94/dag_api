@@ -3,8 +3,73 @@ from pytensor.tensor.random.utils import params_broadcast_shapes
 import numpy as np
 import numpy.typing as npt
 
-from typing import Union
+from typing import Union, Dict, List, Optional, Callable
+from abc import ABC
 from json2dag.models.utils import process_docs
+
+class EdOp(Callable):
+    """
+    Abstract class for edge operations
+    """
+    
+    def __init__(self, **kwargs):
+        
+        if 'n_args' in kwargs:
+            self.n_args = kwargs.pop('n_args')
+        if 'op_name' in kwargs:
+            self.op_name = kwargs.pop('op_name')
+        if 'op' in kwargs:
+            self.op = kwargs.pop('op')
+        if 'args' in kwargs:
+            self.args = kwargs.pop('args')
+        
+        self.kwargs: Dict[str, Union[int, float, str]] = kwargs
+    
+    
+    def __call__(self, x, *args, **kwargs):
+        return self.op(x, *args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.op_name}{', '.join([f'{k}={v}' for k, v in self.kwargs.items()])}"
+    
+    def __repr__(self):
+        return str(self)
+    
+    def __add__(self: 'EdOp', other: 'EdOp'):
+   
+        def _pipe(data, *args, **kwargs):
+            args_left = 0
+            for fn in [self, other]:
+                n_args = fn.n_args
+                data = fn.op(data, *args[args_left:args_left+n_args])
+                args_left += n_args
+            return data
+        
+        return EdOp(op_name=f"{self}->{other}", 
+             op=_pipe, 
+             n_args=self.n_args + other.n_args, 
+             args=self.args + other.args)
+
+    
+class Linear(EdOp):
+    
+    
+    def __init__(self):
+        super(Linear, self).__init__(n_args=1, op_name="linear", args=["beta"], op=linear)
+        self.kwargs = dict()
+
+class GeometricAdstock(EdOp):
+    
+    def __init__(self, l_max: int = 12, normalize: bool = False, axis: int = 0):
+        super(GeometricAdstock, self).__init__(n_args=1, op_name="geometric_adstock", args=["decay"], op=geometric_adstock)
+        self.kwargs = {'l_max': l_max, 'normalize': normalize, 'axis': axis}
+
+class Hill(EdOp):
+    
+    def __init__(self):
+        super(Hill, self).__init__(n_args=2, op_name="hill", args=["K", "S"], op=hill)
+        self.kwargs = dict()
+
 
 def linear(x, b):
   """
