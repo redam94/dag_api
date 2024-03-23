@@ -29,7 +29,7 @@ class EdOp(Callable):
         return self.op(x, *args, **kwargs)
     
     def __str__(self):
-        return f"{self.op_name}{', '.join([f'{k}={v}' for k, v in self.kwargs.items()])}"
+        return f"{self.op_name} {', '.join([f'{k}={v}' for k, v in self.kwargs.items()])}"
     
     def __repr__(self):
         return str(self)
@@ -196,11 +196,11 @@ def geometric_adstock(
     w = w / pt.sum(w, axis=-1, keepdims=True) if normalize else w
     return batched_convolution(x, w, axis=axis)
   
-
+np.vectorize
 def hill(x, K, S):
     """
     Hill transformation
     n_args = 2
     """
     
-    return x**S / (K**S + x**S)
+    return x**S / (x**S + K**S)

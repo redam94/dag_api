@@ -55,7 +55,9 @@ def pipe(*fns):
 
 VALID_PRIOR_CONSTRAINTS = {
   'positive': partial_with_docs(pm.Truncated, dist=pm.Normal.dist(mu=0., sigma=3.), lower=0, upper=np.Inf),
+  'not2big': partial_with_docs(pm.Truncated, dist=pm.Normal.dist(mu=0., sigma=3.), lower=0, upper=10),
   'negative': partial_with_docs(pm.Truncated, dist=pm.Normal.dist(mu=0., sigma=3.), lower=-np.Inf, upper=0),
+  'lognormal': partial_with_docs(pm.Lognormal, mu=1, sigma=2),
   'zero_one': partial_with_docs(pm.Beta, alpha=1, beta=1)
 }
 
@@ -67,4 +69,32 @@ def make_appropriate_prior(name: str, n_args: int, constraint: str|list[str]|Non
   if isinstance(constraint, list):
     assert len(constraint) == n_args
     return [make_appropriate_prior(name, 1, c, offset=i)[0] for i, c in enumerate(constraint)]
+  
+  
+def get_estimator(dag, treatment, outcome, effect_type='total', edges=None):
+  """Produce an estimator for the causal effect baised on the effect type from a DAG
+  Inputs:
+  - dag: the DAG
+  - treatment: the name of the treatment variable
+  - outcome: the name of the outcome variable
+  - effect_type: the type of effect to estimate (total, direct)
+  
+  Returns:
+  - subgraph of type DAG such that all edges pointing from the treatment to the outcome are included trimmed of all other edges
+  
+  """
+  if edges is None:
+    edges = []
+  if effect_type == 'total':
+    if treatment == outcome:
+      return edges
+    
+    for edge in dag.edges:
+      if edge.child.name == outcome:
+        edges.append(edge)
+        edge = get_estimator(dag, treatment, edge.parent.name, effect_type='total', edges=edges)
+  
+  return edges
+  
+  
   
