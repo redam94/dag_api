@@ -228,5 +228,5 @@ class DAG:
                 causes[edge.parent.name].append(edge.child.name)
             else:
                 causes[edge.parent.name] = [edge.child.name]
-        return dag_from_causes_dict(causes)
+        return DAG.dag_from_causes_dict(causes)
     

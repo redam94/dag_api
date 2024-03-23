@@ -97,4 +97,10 @@ def get_estimator(dag, treatment, outcome, effect_type='total', edges=None):
   return edges
   
   
-  
+def is_path_causal(edge_list: list, start: str, end: str) -> bool:
+  for edge in edge_list:
+    if edge.parent.name == start:
+      if edge.child.name == end:
+        return True
+      return is_path_causal(edge_list, edge.child.name, end)
+  return False
