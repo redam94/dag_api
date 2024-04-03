@@ -4287,4 +4287,4 @@ test = ["hypothesis", "packaging", "pytest", "pytest-cov"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "bd63ef82ad158f7744dee0a14701e6ef74026b348ea037a3efb62ed0a9909bb8"
+content-hash = "8b347b4079169de611e6587cdab33ad6f2f1648a692c8c55acd8f193a87bb423"
